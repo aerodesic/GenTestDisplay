@@ -1,0 +1,455 @@
+#! /usr/bin/env python3
+# Translate base.pot into languages specified by translations.csv
+# Produces locale/<language abbreviation>/<domain>.po
+
+import sys
+import argparse
+import json
+import os
+from datetime import datetime
+from dateutil.tz import tzlocal
+
+
+_LANGUAGE_CODES = {
+    'ENGLISH':    'en',
+    'FRENCH':     'fr',
+    'GERMAN':     'de',
+    'DUTCH':      'nl',
+    'NORWEGIAN':  'no',
+    'SWEDISH':    'sv',
+    'DANISH':     'da',
+    'SPANISH':    'es',
+    'PORTUGUESE': 'pt',
+    'ITALIAN':    'it',
+    'POLISH':     'pl',
+    'FINNISH':    'fi',
+    'RUSSIAN':    'ru',
+}
+
+class Translate:
+    def __init__(self, args):
+        self._domain = args.domain
+        self._base_file = args.base_file
+        self._locale_dir = args.locale_dir
+        self._translate_file = args.translate_file
+        self._summary_file = args.summary_file
+        self._email = args.email
+        self._bug_reports = args.bug_reports if args.bug_reports else args.email
+        self._team = args.team if args.team else args.email
+        self._missing_languages = {}
+        self._untranslated_phrases = {}
+
+    # The translation_text file is a TAB-delimited set of fields, each optionally surrounded by "" characters.
+    # An empty newline signifies end of physical line
+    def read_phrases(self, text, index):
+        phrases = []
+
+        done = False
+        while not done:
+            # print("Looking at %d of %d" % (index, len(text)))
+            if index < len(text):
+                if text[index] != '"':
+                    # Get location of newline
+                    end_of_line = text.find('\n', index)
+                    # Get location of next tab
+                    end_of_field = text.find('\t', index)
+
+                    if end_of_field >= 0 and end_of_line >= 0 and end_of_field < end_of_line:
+                        # Tab before newline, so use tab as delimiter and continue
+                        phrase = text[index:end_of_field]
+                        index = end_of_field + 1
+
+                    else:
+                        # Last item in line
+                        done = True
+                        if end_of_line < 0:
+                            # No newline, so use rest of field
+                            phrase = text[index:]
+                            index = len(text)
+                        else:
+                            # Use newline as end of field
+                            phrase = text[index:end_of_line]
+                            index = end_of_line + 1
+
+                else:
+                    # A quote needs a matching quote.
+                    end_of_field = text.find('"', index + 1)
+                    if end_of_field < 0:
+                        # No closing quote, so punt and use end of file
+                        phrase = text[index:]
+                        end_of_field = len(text)
+
+                    else:
+                        # If we stopped on a 'quoted' quote, continue
+                        while text[end_of_field - 1] == '\\':
+                            end_of_field = text.find(end_of_field + 1, '"')
+
+                    phrase = text[index + 1:end_of_field]
+
+                    # Skip past the TAB or end of line
+                    end_of_item = text.find('\t', end_of_field + 1)
+                    end_of_line = text.find('\n', end_of_field + 1)
+
+                    if end_of_item > 0 and end_of_line > 0 and end_of_item < end_of_line:
+                        # More on this line
+                        index = end_of_item + 1
+                    else:
+                        # End of line - is it also end of text?
+                        done = True
+                        if end_of_line < 0:
+                            index = len(text)
+                        else:
+                            index = end_of_line
+
+
+            else:
+                # Out of phrases, terminate now
+                phrase = None
+
+            if phrase != None:
+                phrases.append(phrase.strip().replace('\\n', '\n'))
+
+        print("phrases[%d] %s" % (len(phrases), phrases))
+        return index, phrases
+
+    # Returns <languages>, <translations>
+    def read_translations(self, file):
+        # { '<english string>' : { '<language code>' : '<to string>' }}
+        translations = {}
+
+        f = open(file, "r")
+        translation_text = f.read()
+        f.close()
+
+        translation_text.replace('\xA0', ' ')
+
+        text_index = 0
+        # First fetch language header
+        text_index, languages = self.read_phrases(translation_text, text_index)
+
+        # Now fetch lines of phrases to apply to these languages
+        while text_index < len(translation_text):
+            text_index, phrases = self.read_phrases(translation_text, text_index)
+
+            # Ignore lines that do not contain full list of phrases
+            if len(phrases) == len(languages) and len(phrases[0]) != 0:
+
+                english = phrases[0].replace('\xa0', ' ')
+                # print("Phrases: %s" % (str(phrases)))
+                # First language is always ENGLISH, so skip it
+
+                for index in range(1, len(languages)):
+                    lang = languages[index]
+                    if lang in _LANGUAGE_CODES:
+                        lang_code = _LANGUAGE_CODES[lang]
+
+                        # Install source phrase
+                        if english not in translations:
+                            translations[english] = {}
+
+                        # Install language code if not defined
+                        if lang_code not in translations[english]:
+                            translations[english][lang_code] = {}
+
+                        # print("Adding '%s' (%s) = %s" % (english, lang_code, phrases[index]))
+
+                        translations[english][lang_code] = phrases[index]
+
+                    else:
+                        # Mark as missing and move on
+                        self._missing_languages[lang] = 1
+
+        return languages, translations
+
+    # Read from input until we grab comments, msgid and msgstr
+    # Returns tripple comments, msgid, msgstr
+    # Packets are:
+    #   # comment...
+    #   # comment...
+    #   msgid "str"
+    #   "str"...
+    #   msgstr "str"
+    #   "str"...
+    def read_pot_file(self, input):
+        comments = ""
+        msgid = ""
+        msgstr = ""
+
+        # First grab comments until a msgid is found
+        done = 0
+        while done == 0:
+            line = input.readline()
+            if len(line) == 0:
+                # EOF
+                done = -1
+            elif line.lstrip()[0:5] != "msgid":
+                comments += line
+            else:
+                done = 1
+
+        if done > 0:
+            # Found msgid, so start copying its values
+            stripped_line = line.strip()
+            msgid = eval(stripped_line[5:]).replace('\\n', '\n')
+            while done > 0 and stripped_line[0:6] != "msgstr":
+                line = input.readline()
+                if len(line) != 0:
+                    stripped_line = line.strip()
+                    if stripped_line[0:6] != "msgstr":
+                        msgid += eval(stripped_line).replace('\\n', '\n')
+                else:
+                    # EOF
+                    done = -1
+
+        if done > 0:
+            # All msgid passed and line contains "msgstr"
+            stripped_line = line.strip()
+            msgstr = eval(stripped_line[6:]).replace('\\n', '\n')
+            while done > 0 and stripped_line != '':
+                line = input.readline()
+                if len(line) != 0:
+                    stripped_line = line.strip()
+                    if stripped_line != '':
+                        msgstr += eval(stripped_line).replace('\\n', '\n')
+                else:
+                    done = -1
+        else:
+            comments = None
+
+        return comments, msgid, msgstr
+
+    # Convert a string of "aaa\nbbb\nccc" to:
+    # "aaa\n"
+    # "bbb\n"
+    # "ccc"
+    def multi_lines(self, string):
+        # print("multi_lines: %s%s%s" % (quote, string, quote))
+        if string.find('\n') >= 0:
+            # print("multi_lines: '%s'" % string)
+            results = "\"\"\n"
+
+            lines = string.split('\n')
+            for index in range(len(lines) - 1):
+                results += '"%s\\n"\n' % lines[index]
+            results += '"%s"' % lines[-1]
+        else:
+            results = '"%s"' % string
+
+        return results
+
+    def edit_control_info(self, info, language):
+        info = info.split('\n')
+        output = []
+
+        output.append("Language-Full-Name: %s" % language.capitalize())
+
+        for item in info:
+            fields = [ f.strip() for f in item.split(':', maxsplit=1) ]
+            if fields[0] == "Project-Id-Version":
+                fields[1] = self._domain
+            elif fields[0] == "Report-Msgid-Bugs-To":
+                fields[1] = self._bug_reports
+            elif fields[0] == "PO-Revision-Date":
+                fields[1] = datetime.now(tzlocal()).strftime("%Y-%m-%d %H:%M%z")
+            elif fields[0] == "Last-Translator":
+                fields[1] = self._email
+            elif fields[0] == "Language-Team":
+                fields[1] = self._team
+            elif fields[0] == "Language":
+                fields[1] = _LANGUAGE_CODES[language]
+            elif fields[0] == "Content-Type":
+                fields[1] = "text/plain; charset=UTF-8"
+
+            # print("fields: %s" % fields)
+
+            if len(fields) == 2:
+                output.append("%s: %s" % (fields[0], fields[1]))
+            else:
+                output.append("%s" % fields[0])
+
+
+        # print ("edit_control_info: input %s" % json.dumps(info, indent=3))
+        # print ("edit_control_info: input %s" % json.dumps(output, indent=3))
+
+        return "\n".join(output)
+
+    def translate(self, language, translations = {}):
+        lang_code = _LANGUAGE_CODES[language]
+
+        # print("translate: lang '%s'" % lang_code)
+        # print("%s" % json.dumps(translations, indent=3))
+        # Open the base file
+        with open(self._base_file, "r") as input:
+            # Read the base file and where we find msgid fields that match a
+            # translation entry, change the msgstr field to match the translated
+            # value.  The file is written to <locale_dir><lang code>/LC_MESSAGES/<domain>.po
+            dirpath = os.path.join(self._locale_dir, lang_code, "LC_MESSAGES")
+            os.makedirs(dirpath, exist_ok=True)
+            with open(os.path.join(dirpath, self._domain + ".po"), "w") as output:
+                comments = False
+                while comments != None:
+                    comments, msgid, msgstr = self.read_pot_file(input)
+                    print("comments [%s]" % comments)
+                    print("msgid [%s]" % msgid)
+                    print("msgstr [%s]" % msgstr)
+
+                    if comments != None:
+                        # Write out comments at beginning of msgid
+
+                        # if msgid is empty then this is a control string.  Edit it for contents
+                        if msgid == "":
+                            comments =  "# Localization file for %s\n" % self._domain
+                            comments += "# Copyright (C) 2019, CPAC Industries, Inc.\n"
+                            comments += "# All rights reserved.\n"
+                            comments += "# Authored by: %s\n" % self._email
+                            comments += "\n"
+
+                            msgstr = self.edit_control_info(msgstr, language)
+
+                        elif msgid in translations:
+                            msgstr = translations[msgid]
+
+                        elif lang_code != "en":
+                            if msgid not in self._untranslated_phrases:
+                                self._untranslated_phrases[msgid] = []
+                            self._untranslated_phrases[msgid].append(lang_code)
+
+                        output.write(comments)
+                        output.write('msgid %s\n' % self.multi_lines(msgid))
+                        output.write('msgstr %s\n' % self.multi_lines(msgstr))
+                        output.write('\n')
+
+    def generate_translation(self, language, translations):
+        lang_code = _LANGUAGE_CODES[language]
+
+        translated_phrases = {}
+
+        for phrase in translations:
+            translated_phrases[phrase] = translations[phrase][lang_code]
+
+        return translated_phrases
+
+    def emit_indented_string(self, f, string, indent):
+        lines = self.multi_lines(string, quote='')
+        for line in lines:
+            print("%s\"%s\"\n" % ('\t' * indent, line), file=f)
+
+
+    def run(self):
+        # print("locale_dir '%s' translate_file '%s' base '%s'" % (self._locale_dir, self._translate_file, self._base_file))
+
+        try:
+            languages, translations = self.read_translations(self._translate_file)
+            # print("Languages: %s\n" % json.dumps(languages))
+            # print("Translations: %s\n" % json.dumps(translations))
+            # exit(1)
+
+            if self._summary_file:
+                with open(self._summary_file, "w") as f:
+                    print("Translated language list:", file=f)
+                    for language in languages:
+                        print("\t%s\t[%s]" % (language, _LANGUAGE_CODES[language]), file=f)
+
+                    print("", file=f)
+
+                    print("Translations:", file=f)
+                    for phrase in translations:
+                        # self.emit_indented_string(f, phrase, 1)
+                        print("\t\"%s\"" % phrase.replace('\n', '\\n'), file=f)
+                        phrases = translations[phrase]
+                        for language in phrases:
+                            # print("\t\t%s:" % language, file=f)
+                            # self.emit_indented_string(f, phrases[language], 3)
+                            print("\t\t\"%s\":\t\"%s\"" % (language, phrases[language].replace('\n', '\\n')), file=f)
+                        print("", file=f)
+
+
+            for language in languages:
+                lang_code = _LANGUAGE_CODES[language]
+                if language == "ENGLISH":
+                    # Produce the base en version without translation
+                    self.translate(language)
+                else:
+                    self.translate(language, self.generate_translation(language, translations))
+
+            if len(self._missing_languages) != 0 or len(self._untranslated_phrases) != 0:
+                if self._summary_file:
+                    f = open(self._summary_file, "a")
+                else:
+                    f = sys.stdout
+
+                if len(self._missing_languages) != 0:
+                    print("Warning: Missing language codes:", file=f)
+                    for language in self._missing_languages:
+                        print("\t%s" % language, file=f)
+
+                if len(self._untranslated_phrases) != 0:
+                    print("Warning: Untranslated phrases:", file=f)
+                    for phrase in self._untranslated_phrases:
+                        print("\t\"%s\":\t%s" % (phrase.replace('\n', '\\n'), self._untranslated_phrases[phrase]), file=f)
+
+                if f != sys.stdout:
+                    f.close()
+
+
+            rc = 0
+        except Exception as e:
+            print("%s" % str(e))
+            raise e
+            rc = 1
+
+        return rc
+
+
+
+def main():
+    parser = argparse.ArgumentParser(description='Rhpro Translation generator')
+
+    parser.add_argument("-D", "--domain",
+                        dest="domain",
+                        default="rhpro",
+                        help="domain for translation file.")
+
+    parser.add_argument("-b", "--base",
+                        dest="base_file",
+                        default="base.pot",
+                        help="base template (default 'base.pot')")
+
+    parser.add_argument("-d", "--dir",
+                        dest="locale_dir",
+                        default="locales",
+                        help="locale directory (default 'locales')")
+
+    parser.add_argument("-t", "--translations",
+                        dest="translate_file",
+                        default="translations.csv",
+                        help="translations source csv file (default 'translations.csv')")
+
+    parser.add_argument("-E", "--email",
+                        dest="email",
+                        default="Gary Oliver <go@ao-cs.com>",
+                        help="Builder email address")
+
+    parser.add_argument("-B", "--bugs",
+                        dest="bug_reports",
+                        default="Gary Oliver <go@ao-cs.com>",
+                        help="Bug report email address")
+
+    parser.add_argument("-T", "--team",
+                        dest="team",
+                        default=None,
+                        help="Language team")
+
+    parser.add_argument("-s", "--summary",
+                        dest="summary_file",
+                        default=None,
+                        help="Generate translation summary")
+
+    args = parser.parse_args()
+
+    application = Translate(args)
+
+    return application.run()
+
+if __name__ == '__main__':
+    sys.exit(main())
