@@ -17,7 +17,7 @@ setup(
     url               = "https://www.robosity.com",
     version           = VERSION,
     packages          = [ "gentestdisplay" ],
-    scripts           = [ "gentestdisplay/GenTestDisplay" ],
+    scripts           = [ "gentestdisplay/gentestdisplay" ],
     package_data      = { "gentestdisplay": [ "bitmaps/gentestlogo.png", ] },
     license           = "Copyright 2021, Gary Oliver",
     description       = "Generator Test main display",
