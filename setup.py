@@ -24,7 +24,7 @@ setup(
     data_files        = [
         ("/usr/sbin",                        [ "gentestdisplay/gentestdisplay" ]),
         ("share/bitmaps",                    [ "bitmaps/gentestlogo.png", ] ),
-        ("share/GenTestDisplay",             [ "extra/license", ] ),
+        ("share/GenTestDisplay",             [ "extra/COPYING", ] ),
     ],
     cmdclass = { 'install': post_install },
 )
