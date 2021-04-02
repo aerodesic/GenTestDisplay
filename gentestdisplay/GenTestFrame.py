@@ -11,14 +11,17 @@ import wx
 # end wxGlade
 
 
-from queue import Queue
+try:
+    from queue import Queue
+except:
+    from Queue import Queue
 from LabJackHandler import *
 from PlotGraph import *
 import time
 import math
 import numpy as np
 
-class GenLoggerFrame(wx.Frame):
+class GenTestFrame(wx.Frame):
     __CHANNELS          = [ "AIN0", "AIN1" ]
     # __FREQ_LIMIT        = 3000.0
     __FREQ_LIMIT        = 600.0
@@ -27,7 +30,76 @@ class GenLoggerFrame(wx.Frame):
     __NUM_CHANNELS      = len(__CHANNELS)
 
     def __init__(self, *args, **kwds):
-<161731904815619685399541wxGlade replace GenLoggerFrame __init__>
+        # begin wxGlade: GenTestFrame.__init__
+        kwds["style"] = kwds.get("style", 0) | wx.DEFAULT_FRAME_STYLE
+        wx.Frame.__init__(self, *args, **kwds)
+        self.SetTitle(_("Generator Test"))
+
+        self.mainPanel = wx.Panel(self, wx.ID_ANY)
+        self.mainPanel.SetMinSize((1024, 800))
+
+        mainSizer = wx.FlexGridSizer(3, 1, 5, 5)
+
+        self.frequencySizer = wx.FlexGridSizer(2, 1, 0, 0)
+        mainSizer.Add(self.frequencySizer, 1, wx.ALL | wx.EXPAND, 0)
+
+        titleFrequencySizer = wx.FlexGridSizer(1, 5, 0, 0)
+        self.frequencySizer.Add(titleFrequencySizer, 1, wx.EXPAND, 0)
+
+        label_1 = wx.StaticText(self.mainPanel, wx.ID_ANY, _("Frequency FFT"))
+        titleFrequencySizer.Add(label_1, 0, wx.ALIGN_CENTER, 0)
+
+        self.dummyFrequencyPanel = wx.Panel(self.mainPanel, wx.ID_ANY)
+        self.frequencySizer.Add(self.dummyFrequencyPanel, 1, wx.EXPAND, 0)
+
+        thdSizer = wx.FlexGridSizer(1, 4, 0, 0)
+        mainSizer.Add(thdSizer, 1, wx.ALIGN_CENTER, 0)
+
+        label_5 = wx.StaticText(self.mainPanel, wx.ID_ANY, _("THD Phase1:"))
+        thdSizer.Add(label_5, 0, wx.ALIGN_CENTER_VERTICAL, 0)
+
+        self.frequencyTHDtext1 = wx.TextCtrl(self.mainPanel, wx.ID_ANY, "")
+        thdSizer.Add(self.frequencyTHDtext1, 0, 0, 0)
+
+        label_6 = wx.StaticText(self.mainPanel, wx.ID_ANY, _("THD Phase2:"))
+        thdSizer.Add(label_6, 0, wx.ALIGN_CENTER_VERTICAL, 0)
+
+        self.frequencyTHDtext2 = wx.TextCtrl(self.mainPanel, wx.ID_ANY, "")
+        thdSizer.Add(self.frequencyTHDtext2, 0, 0, 0)
+
+        self.graphSizer = wx.FlexGridSizer(2, 1, 0, 0)
+        mainSizer.Add(self.graphSizer, 1, wx.ALL | wx.EXPAND, 0)
+
+        titleGraphSizer = wx.FlexGridSizer(1, 1, 0, 0)
+        self.graphSizer.Add(titleGraphSizer, 1, wx.EXPAND, 0)
+
+        label_2 = wx.StaticText(self.mainPanel, wx.ID_ANY, _("Graph"))
+        titleGraphSizer.Add(label_2, 0, wx.ALIGN_CENTER, 0)
+
+        self.dummyGraphPanel = wx.Panel(self.mainPanel, wx.ID_ANY)
+        self.graphSizer.Add(self.dummyGraphPanel, 1, wx.EXPAND, 0)
+
+        titleGraphSizer.AddGrowableCol(0)
+
+        self.graphSizer.AddGrowableRow(1)
+        self.graphSizer.AddGrowableCol(0)
+
+        titleFrequencySizer.AddGrowableCol(0)
+
+        self.frequencySizer.AddGrowableRow(1)
+        self.frequencySizer.AddGrowableCol(0)
+
+        mainSizer.AddGrowableRow(0)
+        mainSizer.AddGrowableRow(2)
+        mainSizer.AddGrowableCol(0)
+        self.mainPanel.SetSizer(mainSizer)
+
+        mainSizer.Fit(self)
+        self.Layout()
+
+        self.Bind(wx.EVT_CLOSE, self.OnClose, self)
+        # end wxGlade
+
         self.__labjack_port = None
         self.__labjack = None
         self.__plotitems = []
@@ -36,8 +108,6 @@ class GenLoggerFrame(wx.Frame):
         self.__log_file = None
         self.__playback_file = None
         self.__playback_thread = None
-
-        wx.CallLater(2000, self.OnRefreshPortsHelper)
 
         # Create FFT views
         phase_fft = PlotGraph(parent=self.mainPanel, name="Freq FFT", style=0)
@@ -80,29 +150,17 @@ class GenLoggerFrame(wx.Frame):
         self.graphSizer.Detach(self.dummyGraphPanel)
         self.graphSizer.Add(freq_plot, proportion=1, border=0, flag=wx.EXPAND)
 
-    def OnRefreshPorts(self, event):  # wxGlade: GenLoggerFrame.<event_handler>
-        self.OnRefreshPortsHelper()
-        event.Skip()
+        self.config = {
+            'device': "test",
+            'phase1fft': True,
+            'phase1freq': True,
+            'phase1current': True,
+            'phase2fft': True,
+            'phase2freq': True,
+            'phase2current': True,
+        }
 
-    def OnRefreshPortsHelper(self):
-        busy = wx.BusyCursor()
-
-        self.portCombo.Clear()
-        item = 0
-        labjacks = GetLabJackHandler().AvailableDevices(force=True)
-        for sn in labjacks:
-            for connection in labjacks[sn]['connections']:
-                self.portCombo.Insert("%s:%s" % (sn, connection), item)
-
-        if self.portCombo.GetSelection() == wx.NOT_FOUND and self.portCombo.GetCount() != 0:
-            self.portCombo.SetValue(self.portCombo.GetString(0))
-
-        del busy
-
-    def OnSelectLabjackCombo(self, event):  # wxGlade: GenLoggerFrame.<event_handler>
-        event.Skip()
-
-    def OnStartButton(self, event):  # wxGlade: GenLoggerFrame.<event_handler>
+    def StartCapture(self):
         selected = self.portCombo.GetValue()
 
         if selected is not None:
@@ -120,8 +178,6 @@ class GenLoggerFrame(wx.Frame):
                 self.__packet_thread_id.start()
             else:
                 wx.MessageBox(u"Unable to start packet thread", u"Packet Thread")
-
-        event.Skip()
 
     def __capture_data(self, handle, data):
         self.__queue.put(data)
@@ -173,20 +229,16 @@ class GenLoggerFrame(wx.Frame):
                     for index in range(0, len(data), 2):
                         self.__log_file.write("%.4f,%.4f\n" % (data[index], data[index+1]))
 
-    def OnStopButton(self, event):  # wxGlade: GenLoggerFrame.<event_handler>
-        self.StopCapture()
-        event.Skip()
-
     def StopCapture(self):
         if self.__labjack is not None and self.__packet_thread_id is not None:
             self.__labjack.StreamStop()
             self.__packet_thread_id.join()
             self.__packet_thread_id = None
 
-    def OnExitButton(self, event):  # wxGlade: GenLoggerFrame.<event_handler>
-        self.CloseLogger()
-        wx.Exit()
-        event.Skip()
+###    def OnExitButton(self, event):  # wxGlade: GenTestFrame.<event_handler>
+###        self.CloseLogger()
+###        wx.Exit()
+###        event.Skip()
 
     def CloseLogger(self):
         # print("CloseLogger...")
@@ -199,29 +251,11 @@ class GenLoggerFrame(wx.Frame):
             self.__labjack.Close()
             self.__labjack = None
 
-    def OnClose(self, event):  # wxGlade: GenLoggerFrame.<event_handler>
+    def OnClose(self, event):  # wxGlade: GenTestFrame.<event_handler>
         self.CloseLogger()
         event.Skip()
 
-    def OnFFTCheckbox1(self, event):  # wxGlade: GenLoggerFrame.<event_handler>
-        self.__plotitems[0].DeleteChannel(self.__CHANNELS[0])
-        self.frequencyTHDtext1.Clear()
-        event.Skip()
-
-    def OnFFTCheckbox2(self, event):  # wxGlade: GenLoggerFrame.<event_handler>
-        self.__plotitems[0].DeleteChannel(self.__CHANNELS[1])
-        self.frequencyTHDtext2.Clear()
-        event.Skip()
-
-    def OnGraphCheckbox1(self, event):  # wxGlade: GenLoggerFrame.<event_handler>
-        self.__plotitems[1].DeleteChannel(self.__CHANNELS[0])
-        event.Skip()
-
-    def OnGraphCheckbox2(self, event):  # wxGlade: GenLoggerFrame.<event_handler>
-        self.__plotitems[1].DeleteChannel(self.__CHANNELS[1])
-        event.Skip()
-
-    def OnStartLogButton(self, event):  # wxGlade: GenLoggerFrame.<event_handler>
+    def StartLog(self):  # wxGlade: GenTestFrame.<event_handler>
         if self.__log_file is not None:
             with wx.MessageDialog(self, u"Already Logging.  Replace current log file?", caption=u"Close Current Log File", style=wx.CENTER | wx.YES | wx.CANCEL) as question:
                 if question.showModal() == wx.ID_YES:
@@ -337,16 +371,14 @@ class GenLoggerFrame(wx.Frame):
 
         self.__playback_file = None
 
-    def OnStopLogButton(self, event):  # wxGlade: GenLoggerFrame.<event_handler>
+    def StopLog(self):  # wxGlade: GenTestFrame.<event_handler>
         if self.__log_file is not None:
             self.__log_file.close()
             self.__log_file = None
             self.loggingStatus.Hide()
             self.configSizer.Layout()
 
-        event.Skip()
-
-    def OnPlaybackButton(self, event):  # wxGlade: GenLoggerFrame.<event_handler>
+    def StartPlayback(self):  # wxGlade: GenTestFrame.<event_handler>
         if self.__playback_file is not None:
             self.StopPlayback()
         else:
@@ -354,5 +386,4 @@ class GenLoggerFrame(wx.Frame):
                 if fileDialog.ShowModal() == wx.ID_OK: 
                     self.StartPlayback(fileDialog.GetPath())
 
-        event.Skip()
-<161731904815619685399541wxGlade event_handlers GenLoggerFrame># end of class GenLoggerFrame
+# end of class GenTestDisplay

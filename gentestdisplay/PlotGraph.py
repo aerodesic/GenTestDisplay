@@ -9,8 +9,8 @@
 # Licence:     <your licence>
 #-----------------------------------------------------------------------------
 
-# from numpy.fft import fft
-from scipy.fftpack import fft
+from numpy.fft import fft
+# from scipy.fftpack import fft
 
 import math
 import os
@@ -95,7 +95,7 @@ class PlotGraph(wx.Panel):
         x0 = w * 0.1
         y0 = h * 0.1
         w  = w - 2*x0
-        h  = h - 2*y0
+        h  = h - 3*y0
         
         # Draw Rect coords
         dc.SetPen(wx.Pen(wx.BLACK))
