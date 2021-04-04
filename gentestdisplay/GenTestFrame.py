@@ -100,14 +100,14 @@ class GenTestFrame(wx.Frame):
         self.graphSizer = wx.FlexGridSizer(0, 1, 0, 0)
         self.mainSizer.Add(self.graphSizer, 1, wx.ALL | wx.EXPAND, 1)
 
-        grid_sizer_1 = wx.FlexGridSizer(1, 2, 0, 0)
-        self.mainSizer.Add(grid_sizer_1, 1, wx.EXPAND, 0)
+        buttonSizer = wx.FlexGridSizer(1, 2, 0, 0)
+        self.mainSizer.Add(buttonSizer, 1, wx.ALIGN_CENTER, 0)
 
         self.reloadButton = wx.Button(self.mainPanel, wx.ID_ANY, _("Reload"))
-        grid_sizer_1.Add(self.reloadButton, 0, wx.ALIGN_CENTER, 0)
+        buttonSizer.Add(self.reloadButton, 0, wx.ALIGN_CENTER, 0)
 
         self.configButton = wx.Button(self.mainPanel, wx.ID_ANY, _("Config"))
-        grid_sizer_1.Add(self.configButton, 0, 0, 0)
+        buttonSizer.Add(self.configButton, 0, 0, 0)
 
         self.graphSizer.AddGrowableCol(0)
 
