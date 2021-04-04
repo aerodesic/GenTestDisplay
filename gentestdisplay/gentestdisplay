@@ -10,7 +10,7 @@ from GenTestFrame import GenTestFrame
 if __name__ == "__main__":
     gettext.install("GenTest") # replace with the appropriate catalog name
 
-    GenTest = wx.PySimpleApp()
+    GenTest = wx.App()
     gentestFrame = GenTestFrame(None, wx.ID_ANY, "")
     GenTest.SetTopWindow(gentestFrame)
     gentestFrame.Show()

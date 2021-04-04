@@ -11,90 +11,48 @@ import wx
 # end wxGlade
 
 
+import traceback
 try:
     from queue import Queue
 except:
     from Queue import Queue
-from LabJackHandler import *
+
+
 from PlotGraph import *
 import time
 import math
 import numpy as np
+import json
+from vartab import *
+import math
+
+CONFIGFILE = ".gentestdisplpay"
 
 class GenTestFrame(wx.Frame):
-    __CHANNELS          = [ "AIN0", "AIN1" ]
-    # __FREQ_LIMIT        = 3000.0
-    __FREQ_LIMIT        = 600.0
-    # __FREQ_LIMIT        = 300.0
-    __SCAN_RATE         = 2*__FREQ_LIMIT   # Resolve up to 300Hz
-    __NUM_CHANNELS      = len(__CHANNELS)
+    __DEFAULT_SCAN_RATE = 600    # Points per seconds on all points
 
     def __init__(self, *args, **kwds):
         # begin wxGlade: GenTestFrame.__init__
         kwds["style"] = kwds.get("style", 0) | wx.DEFAULT_FRAME_STYLE
         wx.Frame.__init__(self, *args, **kwds)
         self.SetTitle(_("Generator Test"))
+        self.SetMinSize((800, 600))
 
         self.mainPanel = wx.Panel(self, wx.ID_ANY)
         self.mainPanel.SetMinSize((1024, 800))
 
-        mainSizer = wx.FlexGridSizer(3, 1, 5, 5)
+        self.mainSizer = wx.FlexGridSizer(1, 1, 4, 5)
 
-        self.frequencySizer = wx.FlexGridSizer(2, 1, 0, 0)
-        mainSizer.Add(self.frequencySizer, 1, wx.ALL | wx.EXPAND, 0)
+        self.graphSizer = wx.FlexGridSizer(0, 1, 0, 0)
+        self.mainSizer.Add(self.graphSizer, 1, wx.ALL | wx.EXPAND, 0)
 
-        titleFrequencySizer = wx.FlexGridSizer(1, 5, 0, 0)
-        self.frequencySizer.Add(titleFrequencySizer, 1, wx.EXPAND, 0)
-
-        label_1 = wx.StaticText(self.mainPanel, wx.ID_ANY, _("Frequency FFT"))
-        titleFrequencySizer.Add(label_1, 0, wx.ALIGN_CENTER, 0)
-
-        self.dummyFrequencyPanel = wx.Panel(self.mainPanel, wx.ID_ANY)
-        self.frequencySizer.Add(self.dummyFrequencyPanel, 1, wx.EXPAND, 0)
-
-        thdSizer = wx.FlexGridSizer(1, 4, 0, 0)
-        mainSizer.Add(thdSizer, 1, wx.ALIGN_CENTER, 0)
-
-        label_5 = wx.StaticText(self.mainPanel, wx.ID_ANY, _("THD Phase1:"))
-        thdSizer.Add(label_5, 0, wx.ALIGN_CENTER_VERTICAL, 0)
-
-        self.frequencyTHDtext1 = wx.TextCtrl(self.mainPanel, wx.ID_ANY, "")
-        thdSizer.Add(self.frequencyTHDtext1, 0, 0, 0)
-
-        label_6 = wx.StaticText(self.mainPanel, wx.ID_ANY, _("THD Phase2:"))
-        thdSizer.Add(label_6, 0, wx.ALIGN_CENTER_VERTICAL, 0)
-
-        self.frequencyTHDtext2 = wx.TextCtrl(self.mainPanel, wx.ID_ANY, "")
-        thdSizer.Add(self.frequencyTHDtext2, 0, 0, 0)
-
-        self.graphSizer = wx.FlexGridSizer(2, 1, 0, 0)
-        mainSizer.Add(self.graphSizer, 1, wx.ALL | wx.EXPAND, 0)
-
-        titleGraphSizer = wx.FlexGridSizer(1, 1, 0, 0)
-        self.graphSizer.Add(titleGraphSizer, 1, wx.EXPAND, 0)
-
-        label_2 = wx.StaticText(self.mainPanel, wx.ID_ANY, _("Graph"))
-        titleGraphSizer.Add(label_2, 0, wx.ALIGN_CENTER, 0)
-
-        self.dummyGraphPanel = wx.Panel(self.mainPanel, wx.ID_ANY)
-        self.graphSizer.Add(self.dummyGraphPanel, 1, wx.EXPAND, 0)
-
-        titleGraphSizer.AddGrowableCol(0)
-
-        self.graphSizer.AddGrowableRow(1)
         self.graphSizer.AddGrowableCol(0)
 
-        titleFrequencySizer.AddGrowableCol(0)
+        self.mainSizer.AddGrowableRow(0)
+        self.mainSizer.AddGrowableCol(0)
+        self.mainPanel.SetSizer(self.mainSizer)
 
-        self.frequencySizer.AddGrowableRow(1)
-        self.frequencySizer.AddGrowableCol(0)
-
-        mainSizer.AddGrowableRow(0)
-        mainSizer.AddGrowableRow(2)
-        mainSizer.AddGrowableCol(0)
-        self.mainPanel.SetSizer(mainSizer)
-
-        mainSizer.Fit(self)
+        self.mainSizer.Fit(self)
         self.Layout()
 
         self.Bind(wx.EVT_CLOSE, self.OnClose, self)
@@ -102,63 +60,106 @@ class GenTestFrame(wx.Frame):
 
         self.__labjack_port = None
         self.__labjack = None
-        self.__plotitems = []
+        self.__graphitems = {}
         self.__packet_thread_id = None
         self.__queue = Queue()
         self.__log_file = None
         self.__playback_file = None
         self.__playback_thread = None
 
-        # Create FFT views
-        phase_fft = PlotGraph(parent=self.mainPanel, name="Freq FFT", style=0)
-        phase_fft.SetParams({
-            "plottype": "fft",
-            "points": self.__SCAN_RATE,
-            "xmin": 0,
-            "xmax": self.__FREQ_LIMIT,
-            "ymin": -20,
-            "ymax": 80,
-            "yconvert": lambda y: 10*math.log10(y) if y != 0 else 0,
-            "zero": 1,
-            "results":  "thd",  # Return THD from each fft SetValue
-        })
+        self.__config = VarTab()
 
-        phase_fft.SetChannelColor("AIN0", wx.RED)
-        phase_fft.SetChannelColor("AIN1", wx.BLUE)
+        # Try to load from config file and not not successful, preset the configuration
+        try:
+            with open(os.path.join(os.getenv("HOME"), CONFIGFILE)) as f:
+                self.__config.Load(json.reads(f.read()))
 
-        self.__plotitems.append(phase_fft)
+        except:
+            # Failed to load - reset config and load initial values
+            self.__config.Reset()
 
-        self.frequencySizer.Detach(self.dummyFrequencyPanel)
-        self.frequencySizer.Add(phase_fft, proportion=1, border=0, flag=wx.EXPAND)
+            self.__config.SetValue('global.scanrate', self.__DEFAULT_SCAN_RATE)
 
-        # Create freq plot
-        freq_plot = PlotGraph(parent=self.mainPanel, name="Frequency", style=0)
-        freq_plot.SetParams({
-            "points": self.__FREQ_LIMIT,
-            "xmin": 0,
-            "xmax": self.__FREQ_LIMIT,
-            "ymin": -20,
-            "ymax": 20,
-            "xlabelfun": lambda x: "%.2f" % (x/self.__SCAN_RATE),
-        })
+            # Define the configured channels
+            self.__config.SetValue('channels.p1volts', {})
+            self.__config.SetValue('channels.p2volts', {})
+            self.__config.SetValue('channels.p1amps', {})
+            self.__config.SetValue('channels.p2amps', {})
 
-        freq_plot.SetChannelColor("AIN0", wx.RED)
-        freq_plot.SetChannelColor("AIN1", wx.BLUE)
+            # Define the settings for the FFT display
+            self.__config.SetValue('graphs.fft.channels', [ "p1volts", "p2volts" ])
+            self.__config.SetValue('graphs.fft.params.plottype', 'fft')
+            self.__config.SetValue('graphs.fft.params.points', "$eval{int(${global.scanrate} / 2)}")
+            self.__config.SetValue('graphs.fft.params.xmin', 0)
+            self.__config.SetValue('graphs.fft.params.xmax', "$eval{int(${global.scanrate})}")
+            self.__config.SetValue('graphs.fft.params.ymin', -20)
+            self.__config.SetValue('graphs.fft.params.ymax', 80)
+            self.__config.SetValue('graphs.fft.params.yconvert', "$eval{lambda y: 10*math.log10(y) if y != 0 else 0}")
+            self.__config.SetValue("graphs.fft.params.results", "thd")
 
-        self.__plotitems.append(freq_plot)
+            # Define the settings for the Frequency graph
+            self.__config.SetValue('graphs.freq.channels', [ "p1volts", "p2volts" ])
+            self.__config.SetValue('graphs.freq.params.plottype', 'ts')
+            self.__config.SetValue('graphs.freq.params.points', 300)
+            self.__config.SetValue('graphs.freq.params.xmin', 0)
+            self.__config.SetValue('graphs.freq.params.xmax', 300)
+            self.__config.SetValue('graphs.freq.params.ymin', -20)
+            self.__config.SetValue('graphs.freq.params.ymax', 20)
+            self.__config.SetValue('graphs.freq.params.xlabelfun', "$eval{lambda x: '%.2f' % (x / ${global.scanrate})}")
 
-        self.graphSizer.Detach(self.dummyGraphPanel)
-        self.graphSizer.Add(freq_plot, proportion=1, border=0, flag=wx.EXPAND)
+            # Define the settings for the Current graph
+            self.__config.SetValue('graphs.current.channels', [ "p1amps", "p2amps" ])
+            self.__config.SetValue('graphs.current.params.plottype', 'ts')
+            self.__config.SetValue('graphs.current.params.xmin', 0)
+            self.__config.SetValue('graphs.current.params.xmax', 300)
+            self.__config.SetValue('graphs.current.params.ymin', -20)
+            self.__config.SetValue('graphs.current.params.ymax', 20)
 
-        self.config = {
-            'device': "test",
-            'phase1fft': True,
-            'phase1freq': True,
-            'phase1current': True,
-            'phase2fft': True,
-            'phase2freq': True,
-            'phase2current': True,
-        }
+            try:
+                with open(os.path.join(os.getenv("HOME"), CONFIGFILE), "w") as f:
+                   f.write(json.dumps(self.__config.GetValue(), indent=4, sort_keys=True))
+            except Exception as e:
+                traceback.print_exc()
+
+        self.ReloadGraphs()
+
+
+    def ReloadGraphs(self):
+        # Remove all children
+        for child in self.graphSizer.GetChildren():
+            window = child.GetWindow()
+            if window is not None:
+                print("Removing: %s" % window)
+                self.graphSizer.Detach(window)
+
+        self.__graphitems = {}
+
+        try:
+            graphs = self.__config.GetValue("graphs")
+            row = 0
+            for name in graphs:
+                graph_info = graphs[name]
+                params = self.__config.GetValue("params", base=graph_info)
+                graph_params = {}
+                for param in params:
+                    graph_params[param] = self.__config.GetValue(param, base=params)
+
+                print("Graph %s params %s" % (name, graph_params))
+                graph = PlotGraph(parent=self.mainPanel, name="Graph %s" % name, style=0)
+                self.graphSizer.AddGrowableRow(row)
+                self.graphSizer.Add(graph, proportion=1, border=0, flag=wx.EXPAND)
+                graph.SetParams(graph_params)
+                self.__graphitems[name] = graph
+#                graph.SetChannelColors()
+                # graph.SetSizer(self.graphSizer)
+                row = row + 1
+
+        except Exception as e:
+            traceback.print_exc()
+
+        self.graphSizer.Layout()
+        # self.Update()
+        self.Refresh()
 
     def StartCapture(self):
         selected = self.portCombo.GetValue()
@@ -184,7 +185,7 @@ class GenTestFrame(wx.Frame):
 
     def __update_fft_with_thd(self, value, channel_name):
         # print("__update_thd_with_thd: channel_name %s value %s" % (channel_name, value))
-        results = self.__plotitems[0].SetValue(value, channel=channel_name)
+        results = self.__graphitems[0].SetValue(value, channel=channel_name)
         # print("__update_fft_with_thd returned results %s" % results)
         if "thd" in results:
             if channel_name == "AIN0":
@@ -219,10 +220,10 @@ class GenTestFrame(wx.Frame):
                     wx.CallAfter(self.__update_fft_with_thd, value=data1, channel_name="AIN1")
 
                 if self.enableGraphCheckbox1.IsChecked():
-                    wx.CallAfter(self.__plotitems[1].SetValue, data0, channel="AIN0")
+                    wx.CallAfter(self.__graphitems[1].SetValue, data0, channel="AIN0")
 
                 if self.enableGraphCheckbox2.IsChecked():
-                    wx.CallAfter(self.__plotitems[1].SetValue, data1, channel="AIN1")
+                    wx.CallAfter(self.__graphitems[1].SetValue, data1, channel="AIN1")
 
                 # Send data to log file if requested
                 if self.__log_file is not None:
@@ -244,8 +245,8 @@ class GenTestFrame(wx.Frame):
         # print("CloseLogger...")
         self.StopCapture()
 
-        for plotitem in self.__plotitems:
-            plotitem.Stop()
+        for graph in self.__graphitems:
+            self.__graphitems[graph].Stop()
 
         if self.__labjack != None:
             self.__labjack.Close()

@@ -90,7 +90,7 @@ class PlotGraph(wx.Panel):
     def DrawGraph(self, dc):
         w = self.GetSize().GetWidth()
         h = self.GetSize().GetHeight()
-        # print("PlotGraph: DrawGraph (%d, %d)" % (w, h))
+        print("PlotGraph: DrawGraph (%d, %d)" % (w, h))
 
         x0 = w * 0.1
         y0 = h * 0.1
@@ -390,21 +390,21 @@ class PlotGraph(wx.Panel):
                 
             self.zero          = int(self.EvalParam("zero",          self.__DEFAULT_ZERO))
 
-            print("params is %s"            % str(self.params))
-            print("in_numpoints set to %d"  % self.in_numpoints)
-            print("plottype is %s"          % self.plottype)
-            print("gain is %s"              % self.gain)
-            print("clamp is %s"             % self.clamp)
-            print("ymin is %s"              % self.ymin)
-            print("ymax is %s"              % self.ymax)
-            print("bar is %s"               % self.barchart)
-            print("xmin is %s"              % str(self.xmin))
-            print("xmax is %s"              % str(self.xmax))
-            print("xgrid is %d"             % self.xgrid)
-            print("ygrid is %d"             % self.ygrid)
-            print("subgrid is %f"           % self.subgrid)
-            print("results is %s"           % str(self.results))
-            print("zero is %d"              % self.zero)
+            # print("params is %s"            % str(self.params))
+            # print("in_numpoints set to %d"  % self.in_numpoints)
+            # print("plottype is %s"          % self.plottype)
+            # print("gain is %s"              % self.gain)
+            # print("clamp is %s"             % self.clamp)
+            # print("ymin is %s"              % self.ymin)
+            # print("ymax is %s"              % self.ymax)
+            # print("bar is %s"               % self.barchart)
+            # print("xmin is %s"              % str(self.xmin))
+            # print("xmax is %s"              % str(self.xmax))
+            # print("xgrid is %d"             % self.xgrid)
+            # print("ygrid is %d"             % self.ygrid)
+            # print("subgrid is %f"           % self.subgrid)
+            # print("results is %s"           % str(self.results))
+            # print("zero is %d"              % self.zero)
 
     def Reset(self):
         print("Graph: Reset called")
