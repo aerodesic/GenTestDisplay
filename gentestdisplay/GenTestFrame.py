@@ -25,26 +25,89 @@ import numpy as np
 import json
 from vartab import *
 import math
+from ConfigDialog import *
 
 CONFIGFILE = ".gentestdisplpay"
 
 class GenTestFrame(wx.Frame):
     __DEFAULT_SCAN_RATE = 600    # Points per seconds on all points
 
+    __DEFAULT_CONFIG = {
+        'global': {
+            'graphs': [ 'fft', 'voltage', 'current' ],
+        },
+        'capture': {
+            'scanrate': __DEFAULT_SCAN_RATE,
+            'channels': {
+                'p1volts': {},
+                'p2volts': {},
+                'p1current': {},
+                'p2current': {},
+            },
+        },
+        'graphs': {
+            'fft': {
+                'class': 'PlotGraph',
+                'channels': [ 'p1volts', 'p2volts' ],
+                'params': {
+                    'plottype': 'fft',
+                    'points': '$eval{int(${capture.scanrate} / 2)}',
+                    'xmin': 0,
+                    'xmax': '$eval{int(${capture.scanrate})}',
+                    'ymin': -20,
+                    'ymax': 80,
+                    'yconvert': '$eval{lambda y: 10*math.log10(y) if y != 0 else 0}',
+                    'results': 'thd',
+                },
+            },
+            'voltage': {
+                'class': 'PlotGraph',
+                'channels': [ 'p1volts', 'p2volts' ],
+                'params': {
+                    'plottype': 'ts',
+                    'points': 300,
+                    'xmin': 0,
+                    'xmax': 300,
+                    'ymin': -20,
+                    'ymax': 20,
+                    'xlabelfun': '$eval{lambda x: "%.2f" % (x / ${capture.scanrate})}',
+                },
+            },
+            'current': {
+                'class': 'PlotGraph',
+                'channels': [ 'p1amps', 'p2amps' ],
+                'params': {
+                    'plottype': 'ts',
+                    'xmin': 0,
+                    'xmax': 300,
+                    'ymin': -20,
+                    'ymax': 20,
+                },
+            },
+        },
+    }
+
     def __init__(self, *args, **kwds):
         # begin wxGlade: GenTestFrame.__init__
-        kwds["style"] = kwds.get("style", 0) | wx.DEFAULT_FRAME_STYLE
+        kwds["style"] = kwds.get("style", 0) | wx.DEFAULT_FRAME_STYLE | wx.MAXIMIZE | wx.STAY_ON_TOP
         wx.Frame.__init__(self, *args, **kwds)
         self.SetTitle(_("Generator Test"))
-        self.SetMinSize((800, 600))
 
         self.mainPanel = wx.Panel(self, wx.ID_ANY)
-        self.mainPanel.SetMinSize((1024, 800))
 
-        self.mainSizer = wx.FlexGridSizer(1, 1, 4, 5)
+        self.mainSizer = wx.FlexGridSizer(2, 1, 4, 5)
 
         self.graphSizer = wx.FlexGridSizer(0, 1, 0, 0)
-        self.mainSizer.Add(self.graphSizer, 1, wx.ALL | wx.EXPAND, 0)
+        self.mainSizer.Add(self.graphSizer, 1, wx.ALL | wx.EXPAND, 1)
+
+        grid_sizer_1 = wx.FlexGridSizer(1, 2, 0, 0)
+        self.mainSizer.Add(grid_sizer_1, 1, wx.EXPAND, 0)
+
+        self.reloadButton = wx.Button(self.mainPanel, wx.ID_ANY, _("Reload"))
+        grid_sizer_1.Add(self.reloadButton, 0, wx.ALIGN_CENTER, 0)
+
+        self.configButton = wx.Button(self.mainPanel, wx.ID_ANY, _("Config"))
+        grid_sizer_1.Add(self.configButton, 0, 0, 0)
 
         self.graphSizer.AddGrowableCol(0)
 
@@ -55,6 +118,8 @@ class GenTestFrame(wx.Frame):
         self.mainSizer.Fit(self)
         self.Layout()
 
+        self.Bind(wx.EVT_BUTTON, self.OnReloadButton, self.reloadButton)
+        self.Bind(wx.EVT_BUTTON, self.OnConfigButton, self.configButton)
         self.Bind(wx.EVT_CLOSE, self.OnClose, self)
         # end wxGlade
 
@@ -76,44 +141,7 @@ class GenTestFrame(wx.Frame):
 
         except:
             # Failed to load - reset config and load initial values
-            self.__config.Reset()
-
-            self.__config.SetValue('global.scanrate', self.__DEFAULT_SCAN_RATE)
-
-            # Define the configured channels
-            self.__config.SetValue('channels.p1volts', {})
-            self.__config.SetValue('channels.p2volts', {})
-            self.__config.SetValue('channels.p1amps', {})
-            self.__config.SetValue('channels.p2amps', {})
-
-            # Define the settings for the FFT display
-            self.__config.SetValue('graphs.fft.channels', [ "p1volts", "p2volts" ])
-            self.__config.SetValue('graphs.fft.params.plottype', 'fft')
-            self.__config.SetValue('graphs.fft.params.points', "$eval{int(${global.scanrate} / 2)}")
-            self.__config.SetValue('graphs.fft.params.xmin', 0)
-            self.__config.SetValue('graphs.fft.params.xmax', "$eval{int(${global.scanrate})}")
-            self.__config.SetValue('graphs.fft.params.ymin', -20)
-            self.__config.SetValue('graphs.fft.params.ymax', 80)
-            self.__config.SetValue('graphs.fft.params.yconvert', "$eval{lambda y: 10*math.log10(y) if y != 0 else 0}")
-            self.__config.SetValue("graphs.fft.params.results", "thd")
-
-            # Define the settings for the Frequency graph
-            self.__config.SetValue('graphs.freq.channels', [ "p1volts", "p2volts" ])
-            self.__config.SetValue('graphs.freq.params.plottype', 'ts')
-            self.__config.SetValue('graphs.freq.params.points', 300)
-            self.__config.SetValue('graphs.freq.params.xmin', 0)
-            self.__config.SetValue('graphs.freq.params.xmax', 300)
-            self.__config.SetValue('graphs.freq.params.ymin', -20)
-            self.__config.SetValue('graphs.freq.params.ymax', 20)
-            self.__config.SetValue('graphs.freq.params.xlabelfun', "$eval{lambda x: '%.2f' % (x / ${global.scanrate})}")
-
-            # Define the settings for the Current graph
-            self.__config.SetValue('graphs.current.channels', [ "p1amps", "p2amps" ])
-            self.__config.SetValue('graphs.current.params.plottype', 'ts')
-            self.__config.SetValue('graphs.current.params.xmin', 0)
-            self.__config.SetValue('graphs.current.params.xmax', 300)
-            self.__config.SetValue('graphs.current.params.ymin', -20)
-            self.__config.SetValue('graphs.current.params.ymax', 20)
+            self.__config.Load(self.__DEFAULT_CONFIG)
 
             try:
                 with open(os.path.join(os.getenv("HOME"), CONFIGFILE), "w") as f:
@@ -126,40 +154,51 @@ class GenTestFrame(wx.Frame):
 
     def ReloadGraphs(self):
         # Remove all children
-        for child in self.graphSizer.GetChildren():
-            window = child.GetWindow()
-            if window is not None:
-                print("Removing: %s" % window)
-                self.graphSizer.Detach(window)
+        row = 0
 
-        self.__graphitems = {}
+        for name in list(self.__graphitems):
+            element = self.__graphitems[name]
+            print("Removing item %s" % name)
+            self.graphSizer.Detach(element)
+            self.graphSizer.RemoveGrowableRow(row)
+            row = row + 1
+            del self.__graphitems[name]
 
         try:
-            graphs = self.__config.GetValue("graphs")
+            # Fetch list of graphs to be displayed, in order of appearance
+            graphs = self.__config.GetValue("global.graphs")
             row = 0
+
+            # For each graph, get configuration and allocate the graph
             for name in graphs:
-                graph_info = graphs[name]
+
+                graph_info = self.__config.GetValue("graphs.%s" % name)
+
                 params = self.__config.GetValue("params", base=graph_info)
+
+                # Mine the configuration for the current graph parameters
                 graph_params = {}
                 for param in params:
                     graph_params[param] = self.__config.GetValue(param, base=params)
 
                 print("Graph %s params %s" % (name, graph_params))
-                graph = PlotGraph(parent=self.mainPanel, name="Graph %s" % name, style=0)
-                self.graphSizer.AddGrowableRow(row)
-                self.graphSizer.Add(graph, proportion=1, border=0, flag=wx.EXPAND)
+                graph = eval("%s(parent=self.mainPanel, name='Graph %s', style=0)" % (self.__config.GetValue("class", base=graph_info), name))
                 graph.SetParams(graph_params)
+
                 self.__graphitems[name] = graph
-#                graph.SetChannelColors()
-                # graph.SetSizer(self.graphSizer)
+
+                self.graphSizer.Add(graph, proportion=0, border=0, flag=wx.EXPAND)
+                self.graphSizer.AddGrowableRow(row)
+                # self.graphSizer.Fit(graph)
+
                 row = row + 1
 
         except Exception as e:
             traceback.print_exc()
 
         self.graphSizer.Layout()
-        # self.Update()
-        self.Refresh()
+        self.mainSizer.Layout()
+        self.Fit()
 
     def StartCapture(self):
         selected = self.portCombo.GetValue()
@@ -246,6 +285,7 @@ class GenTestFrame(wx.Frame):
         self.StopCapture()
 
         for graph in self.__graphitems:
+            print("Stopping %s" % graph)
             self.__graphitems[graph].Stop()
 
         if self.__labjack != None:
@@ -387,4 +427,12 @@ class GenTestFrame(wx.Frame):
                 if fileDialog.ShowModal() == wx.ID_OK: 
                     self.StartPlayback(fileDialog.GetPath())
 
+    def OnReloadButton(self, event):  # wxGlade: GenTestFrame.<event_handler>
+        self.ReloadGraphs()
+        event.Skip()
+
+    def OnConfigButton(self, event):  # wxGlade: GenTestFrame.<event_handler>
+        dialog = ConfigDialog(self)
+        dialog.ShowModal()
+        event.Skip()
 # end of class GenTestDisplay

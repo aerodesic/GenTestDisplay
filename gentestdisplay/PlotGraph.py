@@ -50,6 +50,8 @@ class PlotGraph(wx.Panel):
                  name=u"Graph"):
         wx.Panel.__init__(self, parent, id, pos, size, style, name)
         
+        self.SetMinSize((-1,-1))
+
         self.Bind(wx.EVT_PAINT, self.OnPaint)
         self.Bind(wx.EVT_SIZE, self.OnSize)
         
@@ -90,7 +92,7 @@ class PlotGraph(wx.Panel):
     def DrawGraph(self, dc):
         w = self.GetSize().GetWidth()
         h = self.GetSize().GetHeight()
-        print("PlotGraph: DrawGraph (%d, %d)" % (w, h))
+        print("PlotGraph(%s): DrawGraph (%d, %d)" % (self.GetName(), w, h))
 
         x0 = w * 0.1
         y0 = h * 0.1
@@ -219,8 +221,9 @@ class PlotGraph(wx.Panel):
                     lasty = y 
 
     def OnSize(self, event):
-        # print("PlotGraph: OnSize %s", event.GetSize())
+        print("PlotGraph: OnSize %s", event.GetSize())
         self.Refresh()
+        self.Update()
         event.Skip()
     
     # Return the sum of the values in the saved points list from start to end.

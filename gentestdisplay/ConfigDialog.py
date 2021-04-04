@@ -10,8 +10,6 @@ import wx
 # begin wxGlade: extracode
 # end wxGlade
 
-from LabJackHandler import *
-
 class ConfigDialog(wx.Dialog):
     def __init__(self, *args, **kwds):
         # begin wxGlade: ConfigDialog.__init__
@@ -119,20 +117,6 @@ class ConfigDialog(wx.Dialog):
         self.Update()
 
     def OnRescanButton(self, event):  # wxGlade: ConfigDialog.<event_handler>
-        busy = wx.BusyCursor()
-
-        self.device.Clear()
-        item = 0
-        labjacks = GetLabJackHandler().AvailableDevices(force=True)
-        for sn in labjacks:
-            for connection in labjacks[sn]['connections']:
-                self.device.Insert("%s:%s" % (sn, connection), item)
-
-        if self.device.GetSelection() == wx.NOT_FOUND and self.device.GetCount() != 0:
-            self.device.SetValue(self.device.GetString(0))
-
-        del busy
-    
+        print("Event handler 'OnRescanButton' not implemented!")
         event.Skip()
-
 # end of class ConfigDialog
