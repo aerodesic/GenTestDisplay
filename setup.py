@@ -22,7 +22,7 @@ setup(
     description       = "Generator Test main display",
     long_description  = open("README.md").read(),
     data_files        = [
-        ("/usr/sbin",                        [ "gentestdisplay/gentestdisplay" ]),
+        ("/usr/bin",                         [ "gentestdisplay/gentestdisplay" ]),
         ("share/bitmaps",                    [ "bitmaps/gentestlogo.png", ] ),
         ("share/GenTestDisplay",             [ "extra/COPYING", ] ),
     ],
